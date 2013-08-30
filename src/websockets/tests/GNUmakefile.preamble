@@ -1,0 +1,12 @@
+C_FILES = ../handshake.c ../base64.c ../util.c ./test_util.c\
+          ../frames.c ../read_message.c
+test1_C_FILES += $(C_FILES)
+test2_C_FILES += $(C_FILES)
+test3_C_FILES += $(C_FILES)
+test4_C_FILES += ../util.c ./test_util.c
+test5_C_FILES += $(C_FILES)
+test6_C_FILES += ../util.c ./test_util.c ../frames.c
+test7_C_FILES += $(C_FILES)
+test8_C_FILES += ../util.c ./test_util.c
+test9_read_in_frames_C_FILES += $(C_FILES)
+ADDITIONAL_TOOL_LIBS = -lssl -lcrypto -lm

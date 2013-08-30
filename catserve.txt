@@ -1,0 +1,70 @@
+catserve
+========
+Rino Jose <@rjose>
+Aug 30, 2013
+
+Overview
+--------
+Catserve should abstract out all of the websocket-y, http-y, lua-y code into
+one place. I should be able to run multiple catserve instances and have them
+point into different app roots. This should make qplan and mqplan be
+essentially lua repos with some filters.
+
+Implementation
+--------------
+. [X] Copy catserve files from qplan
+. [X] Get catserve running in a generic way
+. Point one catserve instances at qplan and one at mqplan
+. Remove catserve code from qplan and mqplan
+
+1 - Copy catserve files from qplan
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This should be pretty straightforward. Let's get everything built first. I'll
+move the files over and then rearrange into a directory structure that makes
+sense.
+
+After that, we can look at configuring and running it. I need to add the
+websockets repo as a subtree:
+
+        . git remote add ws_remote git@github.com:rjose/websockets.git
+        . git fetch ws_remote
+        . git checkout -b ws_branch ws_remote/master
+        . git checkout master
+        . git read-tree --prefix=src/websockets/ -u ws_branch
+        . git commit
+
+
+2 - Get catserve running in a generic way
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Alright, I can build this! Let's figure out how to configure this. I can do
+this with commandline args or I can with something like an ini file. I think
+an ini file is appropriate for something that would run a bunch of catserves
+automatically. Commandline args are probably best. Every catserve should have
+a live view. There should be basic functionality. There may also be
+app-specific live views.
+
+Let's look at the code to make it more generic and to add commandline arg
+parsing. After that, we should be done with this. OK, I added the port. Not
+sure where the path should go right now. It looks like it's coming from
+init_lua_state. We're doing a require on app.qplan. We should probably do a
+require app.init
+
+Some questions/thoughts:
+
+- I should be able to point to one directory and pick up the webserver root
+  and the app-specific lua-modules.
+- Need some convention for a starting point in lua
+
+
+3 - Point one catserve instance at qplan and one at mqplan
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+To do this, we need a convention for where the initialization file should be
+and what it should do. Done!
+
+Let me clean up our catserve.c file and then I'll check in and push.
+
+
+Thoughts
+--------
+- Need to handle websockets, too.
+- Check in changes to qplan/mqplan. Also remove server stuff.

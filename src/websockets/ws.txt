@@ -1,0 +1,179 @@
+WebSockets Module
+=================
+Rino Jose <@rjose>
+v1, August 1, 2013: Finished step 7
+
+
+Overview
+--------
+About a month ago, we
+link:https://github.com/rjose/prototypes/tree/master/serve_ws[prototyped] a
+number of areas related to websockets. What I'd like to do now is to use that
+work to do TDD on a websockets module that we can use in apps like QPlan. We
+should be able to integrate this into the "handle_request_routine". Somewhere
+in that routine should be a call to check if the request is the start of a
+websocket handshake (that's something that we'll need to implement here). If
+so, it should try to establish a websocket connection; if not, it should
+handle the HTTP request. All of this should happen within the same request
+handling thread.
+
+Once the connection is established, the thread will continue to run until the
+connection is closed. We'll have to make sure we do this efficiently. If this
+hasn't been prototyped properly, we should do so first.
+
+We'll need some way to associate a websocket channel with something in the
+app. For instance, one channel is publishing content to people in a meeting
+while another channel is providing data to a hub app. We need to keep these
+straight within each app.
+
+
+Implementation
+--------------
+. Check if request is start of websocket handshake [X][X][][]
+. Complete websocket handshake (server) [X][X][X][X][X][X]
+. Construct short message [X][X][X][X][]
+. Extract short message body [X][X][X][]
+. Construct medium and long messages [X][X][X][X][X]
+. Extract medium and long message [X][X][X][][]
+. Make PING, PONG, and CLOSE frames [X]
+. Return frame length explicitly [X][X][]
+. Read in frames [X][X][X][X][]
+. Debug medium-sized messages [][][][]
+
+
+
+1 - Check if request is start of websocket handshake
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The first step is to get some initial empty tests to run. I'll copy what I did
+for link:https://github.com/rjose/products/tree/master/algoc[algoc]. Done!
+Now, let's get some HTTP request strings and see if we can tell if they're
+websocket requests or not. I'll start with the first example in the spec.
+Alright, I have the test set up. Let's copy stuff from our proto1.m file. The
+first thing I need to do is search our request string for "Upgrade:
+websocket". Done.
+
+2 - Construct websocket handshake (server)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Assuming that we have a valid ws handshake request, we need to get the
+Sec-Websocket-Key and construct the Sec-WebSocket-Accept value. We need to
+check the fields of the response string. Alright, I set up the test and got it
+to fail. The next step is constructing the response. We need to extract the
+Sec-WebSocket-Key from the response. Alright, I need to do the base64
+encoding/decoding. I'll grab some functions from
+link:http://doctrina.org/Base64-With-OpenSSL-C-API.html[here]. I think I'll
+need to prototype these first to feel comfortable with them.
+
+3 - Construct short message
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Alright, let's see if we can construct a short message. In order to construct
+a short message, we have to construct a frame and mask the message. I'll do
+this in a test. Alright, I was able to construct a "Hello" message text frame.
+Before we go on, let's use uint8_t instead of unsigned char everywhere for
+data. Next, let's test the boundary cases for short messages: empty message
+and 125 char message. Done! Next, let's try short messages with a mask. I
+think masking the hello message is sufficient. Done.
+
+4 - Extract short message body
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+OK, let's try reading a short message. We'll read all of the messages from
+Step 3 above. Hmmm...I think I need to understand how messages with multiple
+frames are handled before I go too much further. Let's do that now. OK, I see.
+Fragmented messages are meant to be concatenated in order. Messages may not be
+interleaved (in one direction), but control frames may appear in between.
+For this part, let's just write a low level function that can extract
+message bodies from a frame. We'll have higher level functions that can
+combine these message bodies if needed.
+
+I'm going to assume that callers of the extract function have given us a valid
+websocket frame (see Thoughts below for more). OK, the hello message worked.
+Let's try the empty message. Done. Let's add the masked message.
+
+5 - Construct and extract medium message
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The main challenge here is setting up the tests. I think I'll have to create
+some test data files for this part. If I can get the mask logic between small
+and medium, I'll just need to focus on the length computation (and the end
+results for the common case). Alright, I was able to construct medium and long
+messages together.
+
+
+6 - Extract medium and long message
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+We'll cheat a little here and use the results from Step 5 as the input for
+these tests. OK, let's start by moving the load_data function to test_util.
+Done. Now, let's try to read in a medium message. I wrangled this around until
+it looked pretty simple. Medium and long messages just worked. Pretty awesome.
+Let's check in.
+
+7 - Make PING, PONG, and CLOSE frames
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This should be pretty straightforward. The beginning should be similar to
+ws_make_text_frame -- and that's all there is to this. Alright, I can make each
+of these frames.
+
+8 - Return frame length explicitly
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+OK, I got bitten by assuming that strings are NUL terminated. I need to
+rewrite the websocket frame functions to return an explicit length. Let's do
+TDD on this first. I have to update test3, test5, and test6. Alright, test5 is
+done. Let's do test3 next. Done. Now, let's do test6. Alright, we're done.
+Let's check this in.
+
+To round this out, we need to do the same for our other frame construction
+functions. Let's do that now. Done. Let's check this in.
+
+9 - Read in frames
+~~~~~~~~~~~~~~~~~~
+In qplan, I had to implement some code that was too low level for that module.
+What we need is to add that code to this websockets module and then expose it
+back out so we can call it without fuss. I'll start by doing some TDD. How do
+we deal with both control frames and messages? I think what we should do is
+have a function that takes a connection and returns a frame type and NUL
+terminated messages. This function will deal with fragments, but it won't send
+PONG frames or close connections by itself. We'll need to define some enums
+for callers to use.
+
+How should we test this? I guess I could pass in a function to do a read from
+a connection. This would be nice because then I could test it. Let's start by
+trying to write such a function. Done. OK, I should be able to write a
+function that sets a frame type and a message. Let's do that next.
+
+Alright, I can read PING, PONG, and CLOSE frames now. Let's do text messages
+next. OK, I can read in a text message frame. Now, let's try fragments. Done!
+Let's check in.
+
+10 - Debug medium-sized messages
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+I think there's a problem where sometimes I think a medium sized message is
+longer than what the frame states. Let me look at the spec and my code a little
+closer. OK, I think I found the issue. It looks like I was double counting the
+mask bytes for medium and long messages.
+
+NOTE: I need some way to timeout the read and kill it. Probably need to refer to the
+Stevens book again.
+
+
+Thoughts
+--------
+I think I'll symlink the websockets directory into the project that needs it
+and compile everything into one executable.
+
+I need to do the masked and unmasked versions.
+
+We'll need to write some logic into our socket reading to act on input one
+byte at a time. I.e., to manage the framing. NOTE: These functions have to do
+the super diligent checking to make sure the websocket frames are valid,
+especially that they have the appropriate length. This should be part of a
+websocket state machine. I'll write a separate spec on that.
+
+Need to write higher level functions that help coordinate the ws function
+calls. For example, clearing the FIN bit or seeing if we need to wait for
+extra length bytes before we start building up a message.
+
+Need to do a prototype on a randomizer. For now, we can have a function that
+always returns the same numbers.
+
+At some point, I should figure out how to write the sha1 function.
+
+For binary data, we'll need to do something like base64 encode it and then
+send it back as a string. Otherwise, we need to return an explicit length.
