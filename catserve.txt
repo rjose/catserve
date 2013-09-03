@@ -66,5 +66,9 @@ Let me clean up our catserve.c file and then I'll check in and push.
 
 Thoughts
 --------
+For the websockets, the application code (lua) should handle differentiating
+between different types of clients. There should be some convention for
+registering a live connection and a connection between servers.
+
 - Need to handle websockets, too.
 - Check in changes to qplan/mqplan. Also remove server stuff.
