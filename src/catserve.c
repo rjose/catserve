@@ -29,13 +29,13 @@
  * Static declarations
  */
 static void clean_up();
-static lua_State *init_lua_state();
+static lua_State *init_lua_state(const char *config_file);
 static void sigint_handler(int signal);
 
 static pthread_mutex_t main_mutex = PTHREAD_MUTEX_INITIALIZER;
 static lua_State *L_main;
 static char *get_arg_value(const char *);
-static int configure_app(int , char **, char **, uint16_t *);
+static int configure_app(int , char **, char **, uint16_t *, char **);
 
 
 
@@ -50,6 +50,7 @@ main(int argc, char *argv[])
 	long status;
         pthread_t web_thread_id;
         char *app_root = NULL;
+        char *config_file = NULL;
         uint16_t port = DEFAULT_PORT;
 
         /* Enable syslog */
@@ -60,15 +61,15 @@ main(int argc, char *argv[])
         signal(SIGINT, &sigint_handler);
 
         /* Get app root and port from commandline args */
-        if (configure_app(argc, argv, &app_root, &port) != 0) {
-                fprintf(stderr, "Usage: catserve -r=<app root path> [-p=<port>]\n");
+        if (configure_app(argc, argv, &app_root, &port, &config_file) != 0) {
+                fprintf(stderr, "Usage: catserve -r=<app root path> -c=<config file> [-p=<port>]\n");
                 exit(1);
         }
         if (0 != chdir(app_root ? app_root : DEFAULT_PATH))
                 misc_failure(__FILE__, __LINE__);
 
         /* Set up lua */
-        L_main = init_lua_state();
+        L_main = init_lua_state(config_file);
         if (web_register_lua_funcs(L_main) != 0)
                 lua_failure(__FILE__, __LINE__);
 
@@ -116,12 +117,13 @@ clean_up()
  * Returns app_root and port for catserve instance.
  */
 static int
-configure_app(int argc, char *argv[], char **app_root, uint16_t *port)
+configure_app(int argc, char *argv[], char **app_root, uint16_t *port, char **config_file)
 {
         int i;
         char *arg_value;
         int result = 0;
         int root_specified = 0;
+        int config_specified = 0;
 
         for (i=1; i < argc; i++) {
                 arg_value = get_arg_value(argv[i]);
@@ -137,13 +139,18 @@ configure_app(int argc, char *argv[], char **app_root, uint16_t *port)
                                         free(arg_value);
                                         break;
 
+                                case 'c':
+                                        *config_file = arg_value;
+                                        config_specified = 1;
+                                        break;
+
                                 default:
                                         result = -1;
                                         break;
                         }
                 }
         }
-        if (!root_specified)
+        if (!root_specified || !config_specified)
                 result = -1;
         return result;
 }
@@ -180,18 +187,24 @@ get_arg_value(const char *arg)
  * will make this app more generic.
  */
 static lua_State *
-init_lua_state()
+init_lua_state(const char *config_file)
 {
         lua_State *result = luaL_newstate();
         luaL_openlibs(result);
 
-        /* Load qplan functionality */
+        /* Load functionality */
         lua_getglobal(result, "require");
-        lua_pushstring(result, "app.init");
+        lua_pushstring(result, "init");
         if (lua_pcall(result, 1, 1, 0) != LUA_OK)
                 luaL_error(result, "Problem requiring init.lua: %s",
                                 lua_tostring(result, -1));
 
+        /* Run initialize function */
+        lua_getglobal(result, "initialize");
+        lua_pushstring(result, config_file);
+        if (lua_pcall(result, 1, 1, 0) != LUA_OK)
+                luaL_error(result, "Problem calling 'initialize': %s",
+                                lua_tostring(result, -1));
         return result;
 }
 
